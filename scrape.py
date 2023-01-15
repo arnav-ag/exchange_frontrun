@@ -135,6 +135,7 @@ def update_etfs():
         for curr in j['pageProps']['spotMarkets']['USDT']
         if '3S' in curr['currency'] and curr['currency'] != 'H3RO3S'
     ]
+    logger.info(f"Retrieved {len(keep)} ETFs from MEXC")
     logger.debug(len(l))
 
     # Filter out non-tradingview
@@ -145,7 +146,7 @@ def update_etfs():
         if f"<em>{curr[:-2]}USDT.P</em>" == r.json()['symbols'][0]['symbol']:
             keep.append(curr)
 
-    logger.info(f"Retrieved {len(keep)} ETFs")
+    logger.info(f"Retrieved {len(keep)} perpetuals from TradingView")
     return keep
 
 
@@ -293,6 +294,7 @@ async def multi_thread_this():
     tasks = await asyncio.gather(schedule_update(), get_updated_prices())
 
 if __name__ == "__main__":
+    # short_etfs = update_etfs()
     short_etfs = [
         'NEAR3S', 'YFII3S', 'LOOKS3S', 'IOTX3S', 'CELO3S', 'QTUM3S', 'AR3S',
         'FILECOIN3S', 'APE3S', 'ZEC3S', 'DOGE3S', 'EGLD3S', 'STORJ3S',
