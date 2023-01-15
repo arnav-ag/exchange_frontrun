@@ -13,7 +13,7 @@ import websockets
 from loguru import logger
 
 # GLOBAL VARIABLE TO CHANGE
-threshold = 0.13
+threshold = 0.12
 updateRebalanceInterval = 5  # minutes
 
 # Logger initialize
@@ -184,7 +184,9 @@ def update_rebalances(l, debug=True):
     return latest, baskets
 
 
-def update_prices(latest, debug=True, prices={}):
+def update_prices(latest, debug=True, prices=None):
+    if prices is None:
+        prices = {}
     start = time.time()
     to_retry = latest.keys()
     results = {}
@@ -232,7 +234,7 @@ async def ping(websocket):
 
 
 async def get_updated_prices():
-
+    global mx, mn
     while True:
         with contextlib.suppress(Exception):
             async with websockets.connect("wss://futures.mexc.com/ws") as websocket:
@@ -247,8 +249,10 @@ async def get_updated_prices():
                     await send({"method": "unsub.depth.full", "param": {"symbol": f"{curr}_USDT", "limit": 20}})
 
                 logger.info("Connected to websocket")
-                print("TIME        DIR.  PERC.   SYMBOL    BASKET     PLACE")
-                print("---------------------------------------------------")
+                to_print = f"|{'TIME'.center(12,' ')}|{'DIR.'.center(8, ' ')}|{'PERC'.center(10, ' ')}|{'SYMBOL'.center(12, ' ')}|{'BASKET'.center(12, ' ')}|{'CURRENT'.center(11, ' ')}|{'PREVIOUS'.center(11, ' ')}|{'TARGET'.center(11, ' ')}|"
+                print("-" * len(to_print))
+                print(to_print)
+                print("-" * len(to_print))
                 task = asyncio.create_task(ping(websocket))
                 multiplier = threshold
                 mx = {}
@@ -264,11 +268,11 @@ async def get_updated_prices():
                                 symbol, 0):
                             mx[symbol] = max(curr_prices)
                             print(
-                                f'{math.trunc(time.time()): <12}UP   {str.format("{:.2f}%", (max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"],2) : <6}  {symbol: <10}{math.trunc(baskets[f"{symbol}3S"]): <12,}{list(baskets.keys()).index(f"{symbol}3S")}')
+                                f'|{str(math.trunc(time.time())).center(12," ")}|{"UP".center(8, " ")}|{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"]).center(10, " ")}|{symbol.center(12, " ")}|{str(math.trunc(baskets[f"{symbol}3S"])).center(12, " ")}|{str(round(max(curr_prices),5)).center(11, " ")}|{str(round(prices[symbol]["high"],5)).center(11, " ")}|{str(round(prices[symbol]["high"]*1.15,5)).center(11, " ")}|')
                         elif min(curr_prices) <= prices[symbol]['low'] * (1 - multiplier) and min(curr_prices) < mn.get(symbol, float('inf')):
                             mn[symbol] = min(curr_prices)
                             print(
-                                f'{math.trunc(time.time()): <12}DOWN {str.format("{:.2f}%",(prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]): <6}  {symbol: <10}{math.trunc(baskets[f"{symbol}3L"]): <12,}{list(baskets.keys()).index(f"{symbol}3L")}')
+                                f'|{str(math.trunc(time.time())).center(12," ")}|{"DOWN".center(8, " ")}|{"{:.2f}%".format((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]).center(10, " ")}|{symbol.center(12, " ")}|{str(math.trunc(baskets[f"{symbol}3L"])).center(12, " ")}|{str(round(min(curr_prices),5)).center(11, " ")}|{str(round(prices[symbol]["low"],5)).center(11, " ")}|{str(round(prices[symbol]["low"]*0.85,5)).center(11, " ")}|')
 
 
 async def schedule_update():
@@ -295,10 +299,10 @@ async def multi_thread_this():
 if __name__ == "__main__":
     # short_etfs = update_etfs()
     short_etfs = [
-        'NEAR3S', 'YFII3S', 'LOOKS3S', 'IOTX3S', 'CELO3S', 'QTUM3S', 'AR3S',
-        'SAND3S', 'FILECOIN3S', 'APE3S', 'ZEC3S', 'DOGE3S', 'EGLD3S',
-        'STORJ3S', 'MATIC3S', 'BAL3S', 'XLM3S', 'VINU3S', 'CHR3S', 'HNT3S',
-        'NKN3S', 'ONT3S', 'RSR3S', 'CRV3S', 'MKR3S', 'XTZ3S', 'ENJ3S', 'OGN3S',
+        'NEAR3S', 'YFII3S', 'HNT3S', 'LOOKS3S', 'IOTX3S', 'CELO3S', 'QTUM3S',
+        'AR3S', 'SAND3S', 'FILECOIN3S', 'APE3S', 'ZEC3S', 'DOGE3S', 'EGLD3S',
+        'STORJ3S', 'MATIC3S', 'BAL3S', 'XLM3S', 'VINU3S', 'CHR3S', 'NKN3S',
+        'ONT3S', 'RSR3S', 'CRV3S', 'MKR3S', 'XTZ3S', 'ENJ3S', 'OGN3S',
         'DENT3S', 'LDO3S', 'ZIL3S', 'GALA3S', 'GRT3S', 'WOO3S', 'CVC3S',
         'BSV3S', 'AVAX3S', 'BNX3S', 'BEL3S', 'GTC3S', 'OMG3S', 'JASMY3S',
         'ROSE3S', 'HT3S', 'SHIB3S', 'GAL3S', 'AXS3S', 'LRC3S', 'TRX3S',
