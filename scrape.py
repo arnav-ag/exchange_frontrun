@@ -1,13 +1,18 @@
-import requests
-import queue
-import time
-import urllib.request
 import asyncio
 import contextlib
-from threading import Thread
 import json
-import websockets
+import queue
 import sys
+import time
+import urllib.request
+from threading import Thread
+
+import requests
+import websockets
+
+# GLOBAL VARIABLE TO CHANGE
+threshold = 0.13
+updateRebalanceInterval = 5  # minutes
 
 
 def request_rebalances(addresses, no_workers):
@@ -223,7 +228,7 @@ async def get_updated_prices():
 
                 print("Connected to websocket")
                 task = asyncio.create_task(ping(websocket))
-                multiplier = 0.08
+                multiplier = threshold
                 mx = {}
                 mn = {}
 
@@ -251,7 +256,7 @@ async def get_updated_prices():
 async def schedule_update():
     global prices, latest
     while True:
-        await asyncio.sleep(60 * 5)
+        await asyncio.sleep(60 * updateRebalanceInterval)
         print("Updating rebalances and prices...")
         latest_updates = update_rebalances(etfs)
         recheck = {etf: latest_updates[etf]
@@ -298,5 +303,3 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     asyncio.run(multi_thread_this())
-
-    print("test")
