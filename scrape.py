@@ -1,19 +1,27 @@
 import asyncio
 import contextlib
-import math
 import json
+import math
 import queue
 import sys
 import time
 import urllib.request
 from threading import Thread
 
-import requests
 import websockets
+import requests
+from loguru import logger
 
 # GLOBAL VARIABLE TO CHANGE
-threshold = 0.145
+threshold = 0.13
 updateRebalanceInterval = 5  # minutes
+
+# Logger initialize
+logger.remove()
+logger.add(
+    sys.stdout, colorize=True,
+    format="<green>{time:DD-MM-YY HH:mm:ss}</green> | <yellow>{message}</yellow>",
+    level="INFO")
 
 
 def request_rebalances(addresses, no_workers):
@@ -126,7 +134,7 @@ def update_etfs():
         for curr in j['pageProps']['spotMarkets']['USDT']
         if '3S' in curr['currency'] and curr['currency'] != 'H3RO3S'
     ]
-    print(len(l))
+    logger.debug(len(l))
 
     # Filter out non-tradingview
     keep = []
@@ -136,7 +144,7 @@ def update_etfs():
         if f"<em>{curr[:-2]}USDT.P</em>" == r.json()['symbols'][0]['symbol']:
             keep.append(curr)
 
-    print(f"Retrieved {len(keep)} ETFs")
+    logger.info(f"Retrieved {len(keep)} ETFs")
     return keep
 
 
@@ -145,12 +153,12 @@ def update_rebalances(l):
     latest = {}
     baskets = {}
     to_retry = l
-    print("Starting update rebalances...")
-    print("")
+    logger.info("Starting update rebalances...")
+    logger.info("")
     while True:
         sys.stdout.write("\033[1A")
         sys.stdout.write("\033[K")
-        print(f"ETFs left: {len(to_retry)}")
+        logger.info(f"Rebalances left: {len(to_retry)}")
         results = request_rebalances(to_retry, 20)
         to_retry = []
         for item in results:
@@ -167,7 +175,7 @@ def update_rebalances(l):
     sys.stdout.write("\033[K")
     sys.stdout.write("\033[1A")
     sys.stdout.write("\033[K")
-    print(f"Updated rebalances in {time.time() - start}s")
+    logger.info(f"Updated rebalances in {time.time() - start}s")
     return latest, baskets
 
 
@@ -176,12 +184,12 @@ def update_prices(latest):
     to_retry = latest.keys()
     results = {}
 
-    print("Starting update prices...")
-    print("")
+    logger.info("Starting update prices...")
+    logger.info("")
     while True:
         sys.stdout.write("\033[1A")
         sys.stdout.write("\033[K")
-        print(f"ETFs left: {len(to_retry)}")
+        logger.info(f"Prices left: {len(to_retry)}")
         results |= request_prices(to_retry, 20, latest)
         to_retry = [item for item in results if not results[item]['success']]
         if not to_retry:
@@ -197,7 +205,7 @@ def update_prices(latest):
     sys.stdout.write("\033[K")
     sys.stdout.write("\033[1A")
     sys.stdout.write("\033[K")
-    print(f"Updated prices in {time.time() - start}s")
+    logger.info(f"Updated prices in {time.time() - start}s")
     return ret
 
 
@@ -231,9 +239,9 @@ async def get_updated_prices():
                     await send({"method": "unsub.depth.step", "param": {"symbol": f"{curr}_USDT"}})
                     await send({"method": "unsub.depth.full", "param": {"symbol": f"{curr}_USDT", "limit": 20}})
 
-                print("Connected to websocket")
-                print("TIME        DIR.  PERC.  SYMB. BASKET  PLACE")
-                print("--------------------------------------------")
+                logger.info("Connected to websocket")
+                print("TIME        DIR.  PERC.  SYMBOL    BASKET     PLACE")
+                print("---------------------------------------------------")
                 task = asyncio.create_task(ping(websocket))
                 multiplier = threshold
                 mx = {}
@@ -249,28 +257,33 @@ async def get_updated_prices():
                                 symbol, 0):
                             mx[symbol] = max(curr_prices)
                             print(
-                                f'{math.trunc(time.time()): <12}UP   {(max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"] : .2f}%  {symbol: <6}{math.trunc(baskets[f"{symbol}3S"]): <8}{list(baskets.keys()).index(f"{symbol}3S"): <4}')
+                                f'{math.trunc(time.time()): <12}UP   {(max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"] : .2f}%  {symbol: <10}{math.trunc(baskets[f"{symbol}3S"]): <12,}{list(baskets.keys()).index(f"{symbol}3S")}')
                         elif min(curr_prices) <= prices[symbol]['low']*(1-multiplier) and min(curr_prices) < mn.get(symbol, float('inf')):
                             mn[symbol] = min(curr_prices)
                             print(
-                                f'{math.trunc(time.time()): <12}DOWN {((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]): .2f}%  {symbol: <6}{math.trunc(baskets[f"{symbol}3L"]): <8}{list(baskets.keys()).index(f"{symbol}3L"): <4}')
+                                f'{math.trunc(time.time()): <12}DOWN {((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]): .2f}%  {symbol: <10}{math.trunc(baskets[f"{symbol}3L"]): <12,}{list(baskets.keys()).index(f"{symbol}3L")}')
 
 
 async def schedule_update():
     global prices, latest, baskets
     while True:
         await asyncio.sleep(60 * updateRebalanceInterval)
-        print("Updating rebalances and prices...")
+        logger.remove()
+        logger.info("Updating rebalances and prices...")
         latest_updates, baskets = update_rebalances(etfs)
         baskets = dict(
             sorted(
                 baskets.items(),
                 key=lambda item: item[1],
                 reverse=True))
-        recheck = {etf: latest_updates[etf]
+        new_rebalances = {etf: latest_updates[etf]
                    for etf in etfs if latest[etf] != latest_updates[etf]}
         latest = latest_updates
-        prices |= update_prices(recheck)
+        prices |= update_prices(new_rebalances)
+        logger.add(
+            sys.stdout, colorize=True,
+            format="<green>{time:DD-MM-YY HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            level="INFO")
 
 
 async def multi_thread_this():
@@ -279,31 +292,31 @@ async def multi_thread_this():
 if __name__ == "__main__":
     short_etfs = [
         'NEAR3S', 'YFII3S', 'LOOKS3S', 'IOTX3S', 'CELO3S', 'QTUM3S', 'AR3S',
-        'APE3S', 'ZEC3S', 'DOGE3S', 'EGLD3S', 'STORJ3S', 'MATIC3S', 'BAL3S',
-        'XLM3S', 'VINU3S', 'CHR3S', 'HNT3S', 'NKN3S', 'ONT3S', 'FILECOIN3S',
-        'RSR3S', 'CRV3S', 'MKR3S', 'XTZ3S', 'ENJ3S', 'OGN3S', 'DENT3S',
-        'LDO3S', 'ZIL3S', 'GALA3S', 'GRT3S', 'WOO3S', 'CVC3S', 'BSV3S',
-        'AVAX3S', 'BNX3S', 'BEL3S', 'GTC3S', 'OMG3S', 'JASMY3S', 'ROSE3S',
-        'HT3S', 'SHIB3S', 'GAL3S', 'AXS3S', 'LRC3S', 'TRX3S', 'YFI3S', 'CTK3S',
-        'CELR3S', 'ATOM3S', 'AAVE3S', 'GLMR3S', 'KAVA3S', 'LUNC3S', 'REEF3S',
-        'RUNE3S', 'DASH3S', 'DAR3S', 'OCEAN3S', 'OP3S', 'BAT3S', 'SOL3S',
-        'ZRX3S', '1INCH3S', 'VET3S', 'ENS3S', 'COTI3S', 'DOT3S', 'RAY3S',
-        'FITFI3S', 'WAVES3S', 'ONE3S', 'RLC3S', 'ARPA3S', 'ETHW3S', 'REN3S',
-        'ANT3S', 'PSG3S', 'SUSHI3S', 'ICP3S', 'LINA3S', 'FLM3S', 'DUSK3S',
-        'FLOW3S', 'SAND3S', 'FTM3S', 'UNI3S', 'BONE3S', 'LTC3S', 'IOST3S',
-        'LIT3S', 'PEOPLE3S', 'SRM3S', 'SNX3S', 'SXP3S', 'BLZ3S', 'TRB3S',
-        'NEO3S', 'ALICE3S', 'STG3S', 'AUDIO3S', 'UNFI3S', 'CHZ3S', 'XMR3S',
-        'LINK3S', 'KLAY3S', 'KSM3S', 'MANA3S', 'ALGO3S', 'THETA3S', 'BNB3S',
-        'CEL3S', 'FOOTBALL3S', 'USTC3S', 'CEEK3S', 'SNFT3S', 'BIT3S',
-        'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
-        'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
-        'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
-        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S']
+        'FILECOIN3S', 'APE3S', 'ZEC3S', 'DOGE3S', 'EGLD3S', 'STORJ3S',
+        'MATIC3S', 'BAL3S', 'XLM3S', 'VINU3S', 'CHR3S', 'HNT3S', 'NKN3S',
+        'ONT3S', 'RSR3S', 'CRV3S', 'MKR3S', 'XTZ3S', 'ENJ3S', 'OGN3S',
+        'DENT3S', 'LDO3S', 'ZIL3S', 'GALA3S', 'GRT3S', 'WOO3S', 'CVC3S',
+        'BSV3S', 'AVAX3S', 'BNX3S', 'BEL3S', 'GTC3S', 'OMG3S', 'JASMY3S',
+        'ROSE3S', 'HT3S', 'SHIB3S', 'GAL3S', 'AXS3S', 'LRC3S', 'TRX3S',
+        'YFI3S', 'CTK3S', 'CELR3S', 'ATOM3S', 'AAVE3S', 'GLMR3S', 'KAVA3S',
+        'LUNC3S', 'REEF3S', 'RUNE3S', 'DASH3S', 'DAR3S', 'OCEAN3S', 'OP3S',
+        'BAT3S', 'SOL3S', 'ZRX3S', '1INCH3S', 'VET3S', 'ENS3S', 'COTI3S',
+        'DOT3S', 'RAY3S', 'FITFI3S', 'WAVES3S', 'ONE3S', 'RLC3S', 'ARPA3S',
+        'ETHW3S', 'REN3S', 'ANT3S', 'PSG3S', 'SUSHI3S', 'ICP3S', 'LINA3S',
+        'FLM3S', 'DUSK3S', 'FLOW3S', 'SAND3S', 'FTM3S', 'UNI3S', 'BONE3S',
+        'LTC3S', 'IOST3S', 'LIT3S', 'PEOPLE3S', 'SRM3S', 'SNX3S', 'SXP3S',
+        'BLZ3S', 'TRB3S', 'NEO3S', 'ALICE3S', 'STG3S', 'AUDIO3S', 'UNFI3S',
+        'CHZ3S', 'XMR3S', 'LINK3S', 'KLAY3S', 'KSM3S', 'MANA3S', 'ALGO3S',
+        'THETA3S', 'BNB3S', 'CEL3S', 'FOOTBALL3S', 'USTC3S', 'CEEK3S',
+        'SNFT3S', 'BIT3S', 'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S',
+        'BTC3S', 'RVN3S', 'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S',
+        'ADA3S', 'MTL3S', 'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S',
+        'SWEAT3S', 'MASK3S', 'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S']
 
     perp = [curr[:-2] for curr in short_etfs]
     long_etf = [f'{curr}3L' for curr in perp]
     etfs = long_etf + short_etfs
-    print(f"Initialising {len(etfs)} ETFs...")
+    logger.info(f"Initialising {len(etfs)} ETFs...")
     latest, baskets = update_rebalances(etfs)
     baskets = dict(
         sorted(
