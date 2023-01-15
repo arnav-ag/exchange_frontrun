@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import math
 import json
 import queue
 import sys
@@ -11,7 +12,7 @@ import requests
 import websockets
 
 # GLOBAL VARIABLE TO CHANGE
-threshold = 0.13
+threshold = 0.145
 updateRebalanceInterval = 5  # minutes
 
 
@@ -142,6 +143,7 @@ def update_etfs():
 def update_rebalances(l):
     start = time.time()
     latest = {}
+    baskets = {}
     to_retry = l
     print("Starting update rebalances...")
     print("")
@@ -157,6 +159,8 @@ def update_rebalances(l):
             else:
                 latest[item] = results[item]['data']['resultList'][0][
                     'rebalanceTime']
+                baskets[item] = results[item]['data']['resultList'][0][
+                    'basketAfter']
         if not to_retry:
             break
     sys.stdout.write("\033[1A")
@@ -164,7 +168,7 @@ def update_rebalances(l):
     sys.stdout.write("\033[1A")
     sys.stdout.write("\033[K")
     print(f"Updated rebalances in {time.time() - start}s")
-    return latest
+    return latest, baskets
 
 
 def update_prices(latest):
@@ -213,6 +217,7 @@ async def ping(websocket):
 
 
 async def get_updated_prices():
+
     while True:
         with contextlib.suppress(Exception):
             async with websockets.connect("wss://futures.mexc.com/ws") as websocket:
@@ -227,6 +232,8 @@ async def get_updated_prices():
                     await send({"method": "unsub.depth.full", "param": {"symbol": f"{curr}_USDT", "limit": 20}})
 
                 print("Connected to websocket")
+                print("TIME        DIR.  PERC.  SYMB. BASKET  PLACE")
+                print("--------------------------------------------")
                 task = asyncio.create_task(ping(websocket))
                 multiplier = threshold
                 mx = {}
@@ -242,23 +249,24 @@ async def get_updated_prices():
                                 symbol, 0):
                             mx[symbol] = max(curr_prices)
                             print(
-                                time.time(),
-                                "UP", symbol,
-                                f"{(max(curr_prices) - prices[symbol]['high'])*100 / prices[symbol]['high'] : .2f}%")
+                                f'{math.trunc(time.time()): <12}UP   {(max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"] : .2f}%  {symbol: <6}{math.trunc(baskets[f"{symbol}3S"]): <8}{list(baskets.keys()).index(f"{symbol}3S"): <4}')
                         elif min(curr_prices) <= prices[symbol]['low']*(1-multiplier) and min(curr_prices) < mn.get(symbol, float('inf')):
                             mn[symbol] = min(curr_prices)
                             print(
-                                time.time(),
-                                "DOWN", symbol,
-                                f"{((prices[symbol]['low'] - min(curr_prices))*100/prices[symbol]['low']): .2f}%")
+                                f'{math.trunc(time.time()): <12}DOWN {((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]): .2f}%  {symbol: <6}{math.trunc(baskets[f"{symbol}3L"]): <8}{list(baskets.keys()).index(f"{symbol}3L"): <4}')
 
 
 async def schedule_update():
-    global prices, latest
+    global prices, latest, baskets
     while True:
         await asyncio.sleep(60 * updateRebalanceInterval)
         print("Updating rebalances and prices...")
-        latest_updates = update_rebalances(etfs)
+        latest_updates, baskets = update_rebalances(etfs)
+        baskets = dict(
+            sorted(
+                baskets.items(),
+                key=lambda item: item[1],
+                reverse=True))
         recheck = {etf: latest_updates[etf]
                    for etf in etfs if latest[etf] != latest_updates[etf]}
         latest = latest_updates
@@ -292,12 +300,16 @@ if __name__ == "__main__":
         'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
         'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S']
 
-    short_etfs = short_etfs
     perp = [curr[:-2] for curr in short_etfs]
     long_etf = [f'{curr}3L' for curr in perp]
     etfs = long_etf + short_etfs
     print(f"Initialising {len(etfs)} ETFs...")
-    latest = update_rebalances(etfs)
+    latest, baskets = update_rebalances(etfs)
+    baskets = dict(
+        sorted(
+            baskets.items(),
+            key=lambda item: item[1],
+            reverse=True))
     prices = update_prices(latest)
 
     loop = asyncio.new_event_loop()
