@@ -4,6 +4,7 @@ import json
 import math
 import queue
 import sys
+import pickle
 import time
 import urllib.request
 from datetime import datetime
@@ -238,7 +239,7 @@ async def ping(websocket):
 
 
 async def get_updated_prices():
-    global mx, mn
+    global to_print
     while True:
         with contextlib.suppress(Exception):
             async with websockets.connect("wss://futures.mexc.com/ws") as websocket:
@@ -293,23 +294,50 @@ async def get_updated_prices():
                                 f'|{str(round(prices[symbol]["low"]*0.85,5)).center(11, " ")}|')
 
 
+def save_files(rebalances, prices):
+    with open('rebalances.json', 'w') as fp:
+        json.dump(rebalances, fp, sort_keys=True, indent=4)
+    with open('prices.json', 'w') as fp:
+        json.dump(prices, fp, sort_keys=True, indent=4)
+    return
+
+def read_files() -> tuple[dict[str, int], dict[str, float]]:
+    try:
+        with open('rebalances.json', 'r') as fp:
+            rebalances = json.load(fp)
+        with open('prices.json', 'r') as fp:
+            prices = json.load(fp)    
+        return rebalances, prices
+    except Exception:
+        return {}, {}
+
+
 async def schedule_update():
     global prices, latest, baskets
     while True:
         await asyncio.sleep(60)
-        logger.debug("Updating rebalances and prices...")
+
         latest_updates, baskets = update_rebalances(etfs, debug=False)
         baskets = dict(
             sorted(
                 baskets.items(),
                 key=lambda item: item[1],
                 reverse=True))
-        new_rebalances = {
-            etf: latest_updates[etf] for etf in etfs
-            if latest[etf] != latest_updates[etf]}
-        latest = latest_updates
-        prices |= update_prices(new_rebalances, debug=False, prices=prices)
-
+        if new_rebalances := {
+            etf: latest_updates[etf]
+            for etf in etfs
+            if latest[etf] != latest_updates[etf]
+        }:
+            latest = latest_updates
+            prices |= update_prices(new_rebalances, debug=False, prices=prices)
+            
+            print("-" * len(to_print))
+            logger.info(f"Updated rebalances and prices: {new_rebalances.keys()}")
+            print("-" * len(to_print))
+            print(to_print)
+            print("-" * len(to_print))
+            
+            save_files(latest, prices)
 
 async def multi_thread_this():
     tasks = await asyncio.gather(schedule_update(), get_updated_prices())
@@ -344,13 +372,23 @@ if __name__ == "__main__":
     etfs = long_etf + short_etfs
     logger.info(f"Initialising {len(etfs)} ETFs...")
     latest, baskets = update_rebalances(etfs)
+    file_rebalances, prices = read_files()
+    
+    new_rebalances = {
+            etf: latest[etf] for etf in etfs
+            if file_rebalances.get(etf, 0) != latest[etf]
+    }
+    
     baskets = dict(
         sorted(
             baskets.items(),
             key=lambda item: item[1],
             reverse=True))
-    prices = update_prices(latest)
+    
+    prices |= update_prices(new_rebalances)
 
+    save_files(latest, prices)
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     asyncio.run(multi_thread_this())
