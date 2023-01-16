@@ -14,7 +14,7 @@ import websockets
 from loguru import logger
 
 # GLOBAL VARIABLE TO CHANGE
-threshold = 0.01
+threshold = 0.12
 updateRebalanceInterval = 5  # minutes
 
 # Logger initialize
@@ -276,7 +276,7 @@ async def get_updated_prices():
                                 f'|{"UP".center(8, " ")}' +
                                 f'|{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"]).center(10, " ")}' +
                                 f'|{symbol.center(12, " ")}' +
-                                f'|{str(math.trunc(baskets[f"{symbol}3S"])).center(12, " ")}' +
+                                f'|{str.format("{:,},", math.trunc(baskets[f"{symbol}3S"])).center(12, " ")}' +
                                 f'|{str(round(max(curr_prices),5)).center(11, " ")}' +
                                 f'|{str(round(prices[symbol]["high"],5)).center(11, " ")}' +
                                 f'|{str(round(prices[symbol]["high"]*1.15,5)).center(11, " ")}|')
@@ -287,7 +287,7 @@ async def get_updated_prices():
                                 f'|{"DOWN".center(8, " ")}' +
                                 f'|{"{:.2f}%".format((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]).center(10, " ")}' +
                                 f'|{symbol.center(12, " ")}' +
-                                f'|{str(math.trunc(baskets[f"{symbol}3L"])).center(12, " ")}' +
+                                f'|{str.format("{:,}",math.trunc(baskets[f"{symbol}3L"])).center(12, " ")}' +
                                 f'|{str(round(min(curr_prices),5)).center(11, " ")}' +
                                 f'|{str(round(prices[symbol]["low"],5)).center(11, " ")}' +
                                 f'|{str(round(prices[symbol]["low"]*0.85,5)).center(11, " ")}|')
@@ -337,7 +337,7 @@ if __name__ == "__main__":
         'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
         'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
         'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
-        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S'][:10]
+        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S']
 
     perp = [curr[:-2] for curr in short_etfs]
     long_etf = [f'{curr}3L' for curr in perp]
