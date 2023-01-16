@@ -6,6 +6,7 @@ import queue
 import sys
 import time
 import urllib.request
+from datetime import datetime
 from threading import Thread
 
 import requests
@@ -13,7 +14,7 @@ import websockets
 from loguru import logger
 
 # GLOBAL VARIABLE TO CHANGE
-threshold = 0.12
+threshold = 0.01
 updateRebalanceInterval = 5  # minutes
 
 # Logger initialize
@@ -87,7 +88,8 @@ def request_prices(addresses, no_workers, latest):
                     break
                 try:
                     request = urllib.request.Request(
-                        f"https://futures.mexc.com/api/v1/contract/kline/{curr[:-2]}_USDT?end={self.latest[curr]//1000+30}&interval=Min1&start={self.latest[curr]//1000-30}")
+                        f"https://futures.mexc.com/api/v1/contract/kline/{curr[:-2]}_USDT?end={self.latest[curr]//1000+30}&interval=Min1&start={self.latest[curr]//1000-30}"
+                    )
                     self.results[curr] = json.load(
                         urllib.request.urlopen(request))
                 except Exception:
@@ -127,7 +129,8 @@ def chunker(seq, size):
 def update_etfs():
     # Get all ETFs
     r = requests.get(
-        "https://www.mexc.co/_next/data/Y-L5HSHVBa36HvD-zpKWF/en-US/leveraged-ETF.json")
+        "https://www.mexc.co/_next/data/Y-L5HSHVBa36HvD-zpKWF/en-US/leveraged-ETF.json"
+    )
     j = r.json()
 
     l = [
@@ -142,7 +145,8 @@ def update_etfs():
     keep = []
     for curr in l:
         r = requests.get(
-            f"https://symbol-search.tradingview.com/s/?text=+{curr[:-2]}USDT.P&hl=1&exchange=MEXC&lang=en&type=&domain=production")
+            f"https://symbol-search.tradingview.com/s/?text=+{curr[:-2]}USDT.P&hl=1&exchange=MEXC&lang=en&type=&domain=production"
+        )
         if f"<em>{curr[:-2]}USDT.P</em>" == r.json()['symbols'][0]['symbol']:
             keep.append(curr)
 
@@ -249,7 +253,7 @@ async def get_updated_prices():
                     await send({"method": "unsub.depth.full", "param": {"symbol": f"{curr}_USDT", "limit": 20}})
 
                 logger.info("Connected to websocket")
-                to_print = f"|{'TIME'.center(12,' ')}|{'DIR.'.center(8, ' ')}|{'PERC'.center(10, ' ')}|{'SYMBOL'.center(12, ' ')}|{'BASKET'.center(12, ' ')}|{'CURRENT'.center(11, ' ')}|{'PREVIOUS'.center(11, ' ')}|{'TARGET'.center(11, ' ')}|"
+                to_print = f"|{'TIME'.center(18,' ')}|{'DIR.'.center(8, ' ')}|{'PERC'.center(10, ' ')}|{'SYMBOL'.center(12, ' ')}|{'BASKET'.center(12, ' ')}|{'CURRENT'.center(11, ' ')}|{'PREVIOUS'.center(11, ' ')}|{'TARGET'.center(11, ' ')}|"
                 print("-" * len(to_print))
                 print(to_print)
                 print("-" * len(to_print))
@@ -268,11 +272,25 @@ async def get_updated_prices():
                                 symbol, 0):
                             mx[symbol] = max(curr_prices)
                             print(
-                                f'|{str(math.trunc(time.time())).center(12," ")}|{"UP".center(8, " ")}|{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"]).center(10, " ")}|{symbol.center(12, " ")}|{str(math.trunc(baskets[f"{symbol}3S"])).center(12, " ")}|{str(round(max(curr_prices),5)).center(11, " ")}|{str(round(prices[symbol]["high"],5)).center(11, " ")}|{str(round(prices[symbol]["high"]*1.15,5)).center(11, " ")}|')
+                                f'|{str(datetime.now().strftime("%d/%m %H:%M:%S")).center(18," ")}' +
+                                f'|{"UP".center(8, " ")}' +
+                                f'|{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"]).center(10, " ")}' +
+                                f'|{symbol.center(12, " ")}' +
+                                f'|{str(math.trunc(baskets[f"{symbol}3S"])).center(12, " ")}' +
+                                f'|{str(round(max(curr_prices),5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["high"],5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["high"]*1.15,5)).center(11, " ")}|')
                         elif min(curr_prices) <= prices[symbol]['low'] * (1 - multiplier) and min(curr_prices) < mn.get(symbol, float('inf')):
                             mn[symbol] = min(curr_prices)
                             print(
-                                f'|{str(math.trunc(time.time())).center(12," ")}|{"DOWN".center(8, " ")}|{"{:.2f}%".format((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]).center(10, " ")}|{symbol.center(12, " ")}|{str(math.trunc(baskets[f"{symbol}3L"])).center(12, " ")}|{str(round(min(curr_prices),5)).center(11, " ")}|{str(round(prices[symbol]["low"],5)).center(11, " ")}|{str(round(prices[symbol]["low"]*0.85,5)).center(11, " ")}|')
+                                f'|{str(datetime.now().strftime("%d/%m %H:%M:%S")).center(18," ")}' +
+                                f'|{"DOWN".center(8, " ")}' +
+                                f'|{"{:.2f}%".format((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]).center(10, " ")}' +
+                                f'|{symbol.center(12, " ")}' +
+                                f'|{str(math.trunc(baskets[f"{symbol}3L"])).center(12, " ")}' +
+                                f'|{str(round(min(curr_prices),5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["low"],5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["low"]*0.85,5)).center(11, " ")}|')
 
 
 async def schedule_update():
@@ -319,7 +337,7 @@ if __name__ == "__main__":
         'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
         'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
         'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
-        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S']
+        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S'][:10]
 
     perp = [curr[:-2] for curr in short_etfs]
     long_etf = [f'{curr}3L' for curr in perp]
