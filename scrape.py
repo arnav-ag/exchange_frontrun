@@ -4,7 +4,6 @@ import json
 import math
 import queue
 import sys
-import pickle
 import time
 import urllib.request
 from datetime import datetime
@@ -16,7 +15,7 @@ from loguru import logger
 
 # GLOBAL VARIABLE TO CHANGE
 threshold = 0.12
-updateRebalanceInterval = 5  # minutes
+update_rebalance_interval = 5  # minutes
 
 # Logger initialize
 logger.remove()
@@ -301,12 +300,13 @@ def save_files(rebalances, prices):
         json.dump(prices, fp, sort_keys=True, indent=4)
     return
 
+
 def read_files() -> tuple[dict[str, int], dict[str, float]]:
     try:
         with open('rebalances.json', 'r') as fp:
             rebalances = json.load(fp)
         with open('prices.json', 'r') as fp:
-            prices = json.load(fp)    
+            prices = json.load(fp)
         return rebalances, prices
     except Exception:
         return {}, {}
@@ -330,14 +330,15 @@ async def schedule_update():
         }:
             latest = latest_updates
             prices |= update_prices(new_rebalances, debug=False, prices=prices)
-            
+            new_baskets = {etf:baskets[etf] for etf in new_rebalances}
             print("-" * len(to_print))
-            logger.info(f"Updated rebalances and prices: {new_rebalances.keys()}")
+            logger.info(f"Updated rebalances and prices: {new_baskets}")
             print("-" * len(to_print))
             print(to_print)
             print("-" * len(to_print))
-            
+
             save_files(latest, prices)
+
 
 async def multi_thread_this():
     tasks = await asyncio.gather(schedule_update(), get_updated_prices())
@@ -373,22 +374,22 @@ if __name__ == "__main__":
     logger.info(f"Initialising {len(etfs)} ETFs...")
     latest, baskets = update_rebalances(etfs)
     file_rebalances, prices = read_files()
-    
+
     new_rebalances = {
-            etf: latest[etf] for etf in etfs
-            if file_rebalances.get(etf, 0) != latest[etf]
+        etf: latest[etf] for etf in etfs
+        if file_rebalances.get(etf, 0) != latest[etf]
     }
-    
+
     baskets = dict(
         sorted(
             baskets.items(),
             key=lambda item: item[1],
             reverse=True))
-    
+
     prices |= update_prices(new_rebalances)
 
     save_files(latest, prices)
-    
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     asyncio.run(multi_thread_this())
