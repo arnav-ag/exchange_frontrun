@@ -14,7 +14,7 @@ import websockets
 from loguru import logger
 
 # GLOBAL VARIABLE TO CHANGE
-threshold = 0.12
+threshold = 0.01
 update_rebalance_interval = 5  # minutes
 
 # Logger initialize
@@ -238,7 +238,7 @@ async def ping(websocket):
 
 
 async def get_updated_prices():
-    global to_print
+    global to_print, mx, mn
     while True:
         with contextlib.suppress(Exception):
             async with websockets.connect("wss://futures.mexc.com/ws") as websocket:
@@ -313,12 +313,14 @@ def read_files() -> tuple[dict[str, int], dict[str, float]]:
 
 
 async def schedule_update():
-    global prices, latest, baskets
+    global prices, latest, baskets, mx, mn
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(60 * update_rebalance_interval)
 
-        latest_updates, baskets = update_rebalances(etfs, debug=False)
-        baskets = dict(
+        latest_updates, rebalanced_baskets = update_rebalances(
+            etfs, debug=False
+        )
+        rebalanced_baskets = dict(
             sorted(
                 baskets.items(),
                 key=lambda item: item[1],
@@ -328,9 +330,13 @@ async def schedule_update():
             for etf in etfs
             if latest[etf] != latest_updates[etf]
         }:
+            mx = {}
+            mn = {}
             latest = latest_updates
             prices |= update_prices(new_rebalances, debug=False, prices=prices)
-            new_baskets = {etf:baskets[etf] for etf in new_rebalances}
+            new_baskets = {etf: (baskets[etf],
+                                 rebalanced_baskets[etf])
+                           for etf in new_rebalances}
             print("-" * len(to_print))
             logger.info(f"Updated rebalances and prices: {new_baskets}")
             print("-" * len(to_print))
@@ -366,7 +372,7 @@ if __name__ == "__main__":
         'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
         'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
         'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
-        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S']
+        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S'][:10]
 
     perp = [curr[:-2] for curr in short_etfs]
     long_etf = [f'{curr}3L' for curr in perp]
@@ -393,3 +399,4 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     asyncio.run(multi_thread_this())
+    
