@@ -6,6 +6,7 @@ import queue
 import sys
 import time
 import urllib.request
+import sqlite3
 from datetime import datetime
 from threading import Thread
 
@@ -25,6 +26,12 @@ logger.add(
     format="<green>{time:DD-MM-YY HH:mm:ss}</green> | <yellow>{message}</yellow>",
     level="INFO")
 
+def create_database(list_of_tokens):
+    conn = sqlite3.connect('Price_table.db')
+    cur = conn.cursor()
+    #for name in list_of_tokens:
+        #cur.execute('''CREATE TABLE {} ('TIME', 'DIR', 'PERC', 'SYMBOL', 'BASKET', 'CURRENT', 'PREVIOUS', 'TARGET')'''.format(name))
+    return cur, conn
 
 def request_rebalances(addresses, no_workers):
     class Worker(Thread):
@@ -88,7 +95,7 @@ def request_prices(addresses, no_workers, latest):
                     break
                 try:
                     request = urllib.request.Request(
-                        f"https://futures.mexc.com/api/v1/contract/kline/{curr[:-2]}_USDT?end={self.latest[curr]//1000+30}&interval=Min1&start={self.latest[curr]//1000-30}"
+                        f"https://futures.mexc.com/api/v1/contract/kline/{curr[:-2]}_USDT?end={self.latest[curr] // 1000 + 30}&interval=Min1&start={self.latest[curr] // 1000 - 30}"
                     )
                     self.results[curr] = json.load(
                         urllib.request.urlopen(request))
@@ -208,10 +215,10 @@ def update_prices(latest, debug=True, prices=None):
             break
     ret = {
         curr:
-        {'low': results[f'{curr}3L']['data']['low'][0]
-         if f'{curr}3L' in results else prices[curr]['low'],
-         'high': results[f'{curr}3S']['data']['high'][0]
-         if f'{curr}3S' in results else prices[curr]['high'], }
+            {'low': results[f'{curr}3L']['data']['low'][0]
+            if f'{curr}3L' in results else prices[curr]['low'],
+             'high': results[f'{curr}3S']['data']['high'][0]
+             if f'{curr}3S' in results else prices[curr]['high'], }
         for curr in {x[: -2] for x in latest.keys()}}
     if debug:
         sys.stdout.write("\033[1A")
@@ -224,7 +231,7 @@ def update_prices(latest, debug=True, prices=None):
 
 async def forever():
     while True:
-        await get_updated_prices()
+        await get_updated_prices(cur, conn)
 
 
 async def ping(websocket):
@@ -237,7 +244,7 @@ async def ping(websocket):
             return
 
 
-async def get_updated_prices():
+async def get_updated_prices(cur, conn):
     global to_print, mx, mn
     while True:
         with contextlib.suppress(Exception):
@@ -253,7 +260,7 @@ async def get_updated_prices():
                     await send({"method": "unsub.depth.full", "param": {"symbol": f"{curr}_USDT", "limit": 20}})
 
                 logger.info("Connected to websocket")
-                to_print = f"|{'TIME'.center(18,' ')}|{'DIR.'.center(8, ' ')}|{'PERC'.center(10, ' ')}|{'SYMBOL'.center(12, ' ')}|{'BASKET'.center(12, ' ')}|{'CURRENT'.center(11, ' ')}|{'PREVIOUS'.center(11, ' ')}|{'TARGET'.center(11, ' ')}|"
+                to_print = f"|{'TIME'.center(18, ' ')}|{'DIR.'.center(8, ' ')}|{'PERC'.center(10, ' ')}|{'SYMBOL'.center(12, ' ')}|{'BASKET'.center(12, ' ')}|{'CURRENT'.center(11, ' ')}|{'PREVIOUS'.center(11, ' ')}|{'TARGET'.center(11, ' ')}|"
                 print("-" * len(to_print))
                 print(to_print)
                 print("-" * len(to_print))
@@ -269,28 +276,52 @@ async def get_updated_prices():
                         curr_prices = [d['p'] for d in message["data"]]
                         if max(curr_prices) >= prices[symbol]['high'] * (
                                 1 + multiplier) and max(curr_prices) > mx.get(
-                                symbol, 0):
+                            symbol, 0):
                             mx[symbol] = max(curr_prices)
+                            TIME = f'{str(datetime.now().strftime("%d/%m %H:%M:%S"))}'
+                            DIR = f'{"UP"}'
+                            PERC = f'{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) * 100 / prices[symbol]["high"])}'
+                            SYMBOL = f'{symbol.center(12, " ")}'
+                            BASKET = f'{str.format("{:,},", math.trunc(baskets[f"{symbol}3S"]))}'
+                            CURRENT = f'|{str(round(max(curr_prices), 5))}'
+                            PREVIOUS = f'{str(round(prices[symbol]["high"], 5))}'
+                            TARGET = f'{str(round(prices[symbol]["high"] * 1.15, 5))}'
+
                             print(
-                                f'|{str(datetime.now().strftime("%d/%m %H:%M:%S")).center(18," ")}' +
+                                f'|{str(datetime.now().strftime("%d/%m %H:%M:%S")).center(18, " ")}' +
                                 f'|{"UP".center(8, " ")}' +
-                                f'|{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) *100 / prices[symbol]["high"]).center(10, " ")}' +
+                                f'|{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) * 100 / prices[symbol]["high"]).center(10, " ")}' +
                                 f'|{symbol.center(12, " ")}' +
                                 f'|{str.format("{:,},", math.trunc(baskets[f"{symbol}3S"])).center(12, " ")}' +
-                                f'|{str(round(max(curr_prices),5)).center(11, " ")}' +
-                                f'|{str(round(prices[symbol]["high"],5)).center(11, " ")}' +
-                                f'|{str(round(prices[symbol]["high"]*1.15,5)).center(11, " ")}|')
-                        elif min(curr_prices) <= prices[symbol]['low'] * (1 - multiplier) and min(curr_prices) < mn.get(symbol, float('inf')):
+                                f'|{str(round(max(curr_prices), 5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["high"], 5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["high"] * 1.15, 5)).center(11, " ")}|')
+                            row = (TIME, DIR, PERC, SYMBOL, BASKET, CURRENT, PREVIOUS, TARGET)
+                            cur.execute(f"INSERT INTO {symbol} VALUES {row}")
+                            conn.commit()
+                        elif min(curr_prices) <= prices[symbol]['low'] * (1 - multiplier) and min(curr_prices) < mn.get(
+                                symbol, float('inf')):
                             mn[symbol] = min(curr_prices)
+                            TIME = f'{str(datetime.now().strftime("%d/%m %H:%M:%S"))}'
+                            DIR = f'{"DOWN".center(8, " ")}'
+                            PERC = f'{"{:.2f}%".format((max(curr_prices) - prices[symbol]["high"]) * 100 / prices[symbol]["low"])}'
+                            SYMBOL = f'{symbol}'
+                            BASKET = f'{str.format("{:,}", math.trunc(baskets[f"{symbol}3L"]))}'
+                            CURRENT = f'|{str(round(min(curr_prices), 5))}'
+                            PREVIOUS = f'{str(round(prices[symbol]["low"], 5))}'
+                            TARGET = f'{str(round(prices[symbol]["low"] * 0.85, 5))}'
+                            row = (TIME, DIR, PERC, SYMBOL, BASKET, CURRENT, PREVIOUS, TARGET)
                             print(
-                                f'|{str(datetime.now().strftime("%d/%m %H:%M:%S")).center(18," ")}' +
+                                f'|{str(datetime.now().strftime("%d/%m %H:%M:%S")).center(18, " ")}' +
                                 f'|{"DOWN".center(8, " ")}' +
-                                f'|{"{:.2f}%".format((prices[symbol]["low"] - min(curr_prices))*100/prices[symbol]["low"]).center(10, " ")}' +
+                                f'|{"{:.2f}%".format((prices[symbol]["low"] - min(curr_prices)) * 100 / prices[symbol]["low"]).center(10, " ")}' +
                                 f'|{symbol.center(12, " ")}' +
-                                f'|{str.format("{:,}",math.trunc(baskets[f"{symbol}3L"])).center(12, " ")}' +
-                                f'|{str(round(min(curr_prices),5)).center(11, " ")}' +
-                                f'|{str(round(prices[symbol]["low"],5)).center(11, " ")}' +
-                                f'|{str(round(prices[symbol]["low"]*0.85,5)).center(11, " ")}|')
+                                f'|{str.format("{:,}", math.trunc(baskets[f"{symbol}3L"])).center(12, " ")}' +
+                                f'|{str(round(min(curr_prices), 5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["low"], 5)).center(11, " ")}' +
+                                f'|{str(round(prices[symbol]["low"] * 0.85, 5)).center(11, " ")}')
+                            cur.execute(f"INSERT INTO {symbol} VALUES {row}")
+                            conn.commit()
 
 
 def save_files(rebalances, prices):
@@ -347,36 +378,40 @@ async def schedule_update():
 
 
 async def multi_thread_this():
-    tasks = await asyncio.gather(schedule_update(), get_updated_prices())
+    tasks = await asyncio.gather(schedule_update(), get_updated_prices(cur, conn))
+
 
 if __name__ == "__main__":
     # short_etfs = update_etfs()
     short_etfs = [
-        'NEAR3S', 'YFII3S', 'HNT3S', 'LOOKS3S', 'IOTX3S', 'CELO3S', 'QTUM3S',
-        'AR3S', 'SAND3S', 'FILECOIN3S', 'APE3S', 'ZEC3S', 'DOGE3S', 'EGLD3S',
-        'STORJ3S', 'MATIC3S', 'BAL3S', 'XLM3S', 'VINU3S', 'CHR3S', 'NKN3S',
-        'ONT3S', 'RSR3S', 'CRV3S', 'MKR3S', 'XTZ3S', 'ENJ3S', 'OGN3S',
-        'DENT3S', 'LDO3S', 'ZIL3S', 'GALA3S', 'GRT3S', 'WOO3S', 'CVC3S',
-        'BSV3S', 'AVAX3S', 'BNX3S', 'BEL3S', 'GTC3S', 'OMG3S', 'JASMY3S',
-        'ROSE3S', 'HT3S', 'SHIB3S', 'GAL3S', 'AXS3S', 'LRC3S', 'TRX3S',
-        'YFI3S', 'CTK3S', 'CELR3S', 'ATOM3S', 'AAVE3S', 'GLMR3S', 'KAVA3S',
-        'LUNC3S', 'REEF3S', 'RUNE3S', 'DASH3S', 'DAR3S', 'OCEAN3S', 'OP3S',
-        'BAT3S', 'SOL3S', 'ZRX3S', '1INCH3S', 'VET3S', 'ENS3S', 'COTI3S',
-        'DOT3S', 'RAY3S', 'FITFI3S', 'WAVES3S', 'ONE3S', 'RLC3S', 'ARPA3S',
-        'ETHW3S', 'REN3S', 'ANT3S', 'PSG3S', 'SUSHI3S', 'ICP3S', 'LINA3S',
-        'FLM3S', 'DUSK3S', 'FLOW3S', 'FTM3S', 'UNI3S', 'BONE3S', 'LTC3S',
-        'IOST3S', 'LIT3S', 'PEOPLE3S', 'SRM3S', 'SNX3S', 'SXP3S', 'BLZ3S',
-        'TRB3S', 'NEO3S', 'ALICE3S', 'STG3S', 'AUDIO3S', 'UNFI3S', 'CHZ3S',
-        'XMR3S', 'LINK3S', 'KLAY3S', 'KSM3S', 'MANA3S', 'ALGO3S', 'THETA3S',
-        'BNB3S', 'CEL3S', 'FOOTBALL3S', 'USTC3S', 'CEEK3S', 'SNFT3S', 'BIT3S',
-        'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
-        'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
-        'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
-        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S'][:10]
+                     'IOTX3S', 'CELO3S', 'QTUM3S',
+                     'AR3S', 'SAND3S', 'APE3S', 'ZEC3S', 'EGLD3S',
+                     'STORJ3S', 'BAL3S', 'XLM3S', 'VINU3S', 'CHR3S', 'NKN3S',
+                     'ONT3S', 'RSR3S', 'CRV3S', 'MKR3S', 'XTZ3S', 'ENJ3S', 'OGN3S',
+                     'DENT3S', 'LDO3S', 'ZIL3S', 'GALA3S', 'GRT3S', 'WOO3S', 'CVC3S',
+                     'BSV3S', 'AVAX3S', 'BNX3S', 'BEL3S', 'GTC3S', 'OMG3S', 'JASMY3S',
+                     'ROSE3S', 'HT3S', 'GAL3S', 'AXS3S', 'LRC3S', 'TRX3S',
+                     'YFI3S', 'CTK3S', 'CELR3S', 'ATOM3S', 'AAVE3S', 'GLMR3S', 'KAVA3S',
+                     'LUNC3S', 'REEF3S', 'RUNE3S', 'DASH3S', 'DAR3S', 'OCEAN3S', 'OP3S',
+                     'BAT3S', 'SOL3S', 'ZRX3S', '1INCH3S', 'VET3S', 'ENS3S', 'COTI3S',
+                     'DOT3S', 'RAY3S', 'FITFI3S', 'WAVES3S', 'ONE3S', 'RLC3S', 'ARPA3S',
+                     'REN3S', 'ANT3S', 'PSG3S', 'SUSHI3S', 'ICP3S', 'LINA3S',
+                     'FLM3S', 'DUSK3S', 'FLOW3S', 'FTM3S', 'UNI3S', 'BONE3S', 'LTC3S',
+                     'IOST3S', 'LIT3S', 'PEOPLE3S', 'SRM3S', 'SNX3S', 'SXP3S', 'BLZ3S',
+                     'TRB3S', 'NEO3S', 'ALICE3S', 'STG3S', 'AUDIO3S', 'UNFI3S', 'CHZ3S',
+                     'XMR3S', 'LINK3S', 'KLAY3S', 'KSM3S', 'MANA3S', 'ALGO3S', 'THETA3S',
+                     'BNB3S', 'CEL3S', 'FOOTBALL3S', 'USTC3S', 'CEEK3S', 'SNFT3S', 'BIT3S',
+                     'SANTOS3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
+                     'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
+                     'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
+                     'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S'][:10]
 
     perp = [curr[:-2] for curr in short_etfs]
     long_etf = [f'{curr}3L' for curr in perp]
     etfs = long_etf + short_etfs
+    logger.info(f"Initialising creation of databases...")
+    cur, conn = create_database(set([x[:-2] for x in etfs]))
+
     logger.info(f"Initialising {len(etfs)} ETFs...")
     latest, baskets = update_rebalances(etfs)
     file_rebalances, prices = read_files()
@@ -399,4 +434,3 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     asyncio.run(multi_thread_this())
-    
