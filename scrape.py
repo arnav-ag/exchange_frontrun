@@ -14,8 +14,8 @@ import websockets
 from loguru import logger
 
 # GLOBAL VARIABLE TO CHANGE
-threshold = 0.01
-update_rebalance_interval = 5  # minutes
+threshold = 0.12
+update_rebalance_interval = 2  # minutes
 
 # Logger initialize
 logger.remove()
@@ -322,7 +322,7 @@ async def schedule_update():
         )
         rebalanced_baskets = dict(
             sorted(
-                baskets.items(),
+                rebalanced_baskets.items(),
                 key=lambda item: item[1],
                 reverse=True))
         if new_rebalances := {
@@ -337,6 +337,7 @@ async def schedule_update():
             new_baskets = {etf: (baskets[etf],
                                  rebalanced_baskets[etf])
                            for etf in new_rebalances}
+            baskets = rebalanced_baskets
             print("-" * len(to_print))
             logger.info(f"Updated rebalances and prices: {new_baskets}")
             print("-" * len(to_print))
@@ -372,7 +373,7 @@ if __name__ == "__main__":
         'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
         'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
         'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
-        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S'][:10]
+        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S']
 
     perp = [curr[:-2] for curr in short_etfs]
     long_etf = [f'{curr}3L' for curr in perp]
@@ -399,4 +400,3 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     asyncio.run(multi_thread_this())
-    
