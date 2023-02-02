@@ -126,18 +126,22 @@ def chunker(seq, size):
     return (seq[pos:pos + size] for pos in range(0, len(seq), size))
 
 
-def update_etfs():
+def update_etfs(num=30):
     # Get all ETFs
+    '''
+    :param num: the number of unique etfs coins to return, default = 30
+    :return: list of unique etfs coins names
+    '''
     r = requests.get(
-        "https://www.mexc.co/_next/data/Y-L5HSHVBa36HvD-zpKWF/en-US/leveraged-ETF.json"
+        "https://api.mexc.com/api/v3/etf/info"
     )
-    j = r.json()
-
-    l = [
-        curr['currency']
-        for curr in j['pageProps']['spotMarkets']['USDT']
-        if '3S' in curr['currency'] and curr['currency'] != 'H3RO3S'
-    ]
+    #getting list of unique token values
+    keep = list(set([r.json()[i]['symbol'][:-6] for i in range(len(r.json()))]))[:num]
+    logger.info(f"Retrieved {len(keep)} ETFs from MEXC")
+    #adding 3l and 3s to make a final list
+    l_etfs = [f'{x}3L' for x in keep]
+    s_etfs = [f'{x}3S' for x in keep]
+    l = l_etfs + s_etfs
     logger.info(f"Retrieved {len(keep)} ETFs from MEXC")
     logger.debug(len(l))
 
@@ -350,34 +354,9 @@ async def multi_thread_this():
     tasks = await asyncio.gather(schedule_update(), get_updated_prices())
 
 if __name__ == "__main__":
-    # short_etfs = update_etfs()
-    short_etfs = [
-        'NEAR3S', 'YFII3S', 'HNT3S', 'LOOKS3S', 'IOTX3S', 'CELO3S', 'QTUM3S',
-        'AR3S', 'SAND3S', 'FILECOIN3S', 'APE3S', 'ZEC3S', 'DOGE3S', 'EGLD3S',
-        'STORJ3S', 'MATIC3S', 'BAL3S', 'XLM3S', 'VINU3S', 'CHR3S', 'NKN3S',
-        'ONT3S', 'RSR3S', 'CRV3S', 'MKR3S', 'XTZ3S', 'ENJ3S', 'OGN3S',
-        'DENT3S', 'LDO3S', 'ZIL3S', 'GALA3S', 'GRT3S', 'WOO3S', 'CVC3S',
-        'BSV3S', 'AVAX3S', 'BNX3S', 'BEL3S', 'GTC3S', 'OMG3S', 'JASMY3S',
-        'ROSE3S', 'HT3S', 'SHIB3S', 'GAL3S', 'AXS3S', 'LRC3S', 'TRX3S',
-        'YFI3S', 'CTK3S', 'CELR3S', 'ATOM3S', 'AAVE3S', 'GLMR3S', 'KAVA3S',
-        'LUNC3S', 'REEF3S', 'RUNE3S', 'DASH3S', 'DAR3S', 'OCEAN3S', 'OP3S',
-        'BAT3S', 'SOL3S', 'ZRX3S', '1INCH3S', 'VET3S', 'ENS3S', 'COTI3S',
-        'DOT3S', 'RAY3S', 'FITFI3S', 'WAVES3S', 'ONE3S', 'RLC3S', 'ARPA3S',
-        'ETHW3S', 'REN3S', 'ANT3S', 'PSG3S', 'SUSHI3S', 'ICP3S', 'LINA3S',
-        'FLM3S', 'DUSK3S', 'FLOW3S', 'FTM3S', 'UNI3S', 'BONE3S', 'LTC3S',
-        'IOST3S', 'LIT3S', 'PEOPLE3S', 'SRM3S', 'SNX3S', 'SXP3S', 'BLZ3S',
-        'TRB3S', 'NEO3S', 'ALICE3S', 'STG3S', 'AUDIO3S', 'UNFI3S', 'CHZ3S',
-        'XMR3S', 'LINK3S', 'KLAY3S', 'KSM3S', 'MANA3S', 'ALGO3S', 'THETA3S',
-        'BNB3S', 'CEL3S', 'FOOTBALL3S', 'USTC3S', 'CEEK3S', 'SNFT3S', 'BIT3S',
-        'SANTOS3S', 'ETC3S', 'ANC3S', 'KNC3S', 'IOTA3S', 'BTC3S', 'RVN3S',
-        'SFP3S', 'API33S', 'EOS3S', 'BAKE3S', 'IMX3S', 'ADA3S', 'MTL3S',
-        'DYDX3S', 'C983S', 'BAND3S', 'COMP3S', 'XRP3S', 'SWEAT3S', 'MASK3S',
-        'DC3S', 'ETH3S', 'ANKR3S', 'STMX3S', 'BCH3S'][:10]
-
-    perp = [curr[:-2] for curr in short_etfs]
-    long_etf = [f'{curr}3L' for curr in perp]
-    etfs = long_etf + short_etfs
+    etfs = update_etfs()
     logger.info(f"Initialising {len(etfs)} ETFs...")
+    perp = [curr[:-2] for curr in etfs]
     latest, baskets = update_rebalances(etfs)
     file_rebalances, prices = read_files()
 
